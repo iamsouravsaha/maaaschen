@@ -5,9 +5,22 @@
 // Paste either the Playlist ID OR the full YouTube playlist link.
 // ============================================================
 const playlists = {
-    'mahalaya':  { type: 'playlist', listId: 'https://www.youtube.com/watch?v=YQyo8QeoYhc&list=PLeLE8pKcP7n4' },
-    'pujo-prem': { type: 'playlist', listId: 'https://www.youtube.com/watch?v=qAvT2OcMdnk&list=PLCAvTbKC1xSc' },
-    'pujo-radio':{ type: 'playlist', listId: 'https://www.youtube.com/watch?v=fpuadv59iYw&list=PLDCeflCIhWgs' }
+    // Add/remove YouTube VIDEO IDs here.
+    // Playback no longer depends on YouTube Playlist API.
+    'mahalaya': {
+        type: 'videos',
+        videos: ['YQyo8QeoYhc']
+    },
+
+    'pujo-prem': {
+        type: 'videos',
+        videos: ['qAvT2OcMdnk']
+    },
+
+    'pujo-radio': {
+        type: 'videos',
+        videos: ['fpuadv59iYw']
+    }
 };
 
 // Kolkata Puja list used for the QR code + clickable link.
@@ -19,49 +32,74 @@ let player = null;
 let progressInterval = null;
 let currentPlaylistItems = [];
 
-function normalizePlaylistId(value) {
+function normalizeVideoId(value) {
     if (!value) return '';
-    const text = String(value).trim();
-    if (!text || text.startsWith('YOUR_')) return '';
 
-    // Accept a plain playlist ID.
-    if (!text.includes('youtube.com') && !text.includes('youtu.be')) return text;
+    const text = String(value).trim();
+
+    // Plain YouTube video ID
+    if (!text.includes('youtube.com') && !text.includes('youtu.be')) {
+        return text;
+    }
 
     try {
         const url = new URL(text);
-        return url.searchParams.get('list') || '';
+
+        // Standard watch URL
+        if (url.searchParams.get('v')) {
+            return url.searchParams.get('v');
+        }
+
+        // youtu.be/VIDEO_ID
+        if (url.hostname.includes('youtu.be')) {
+            return url.pathname.replace('/', '').split('/')[0];
+        }
+
+        return '';
     } catch (e) {
-        const match = text.match(/[?&]list=([^&]+)/);
+        const match = text.match(/[?&]v=([^&]+)/);
         return match ? match[1] : '';
     }
 }
 
-function getConfiguredPlaylistId() {
-    return normalizePlaylistId(playlists[currentPlaylistKey]?.listId);
+function getConfiguredVideoIds() {
+    const config = playlists[currentPlaylistKey];
+
+    if (!config) return [];
+
+    if (Array.isArray(config.videos)) {
+        return config.videos
+            .map(normalizeVideoId)
+            .filter(Boolean);
+    }
+
+    return [];
 }
 
 function getConfiguredVideoId() {
-    const value = playlists[currentPlaylistKey]?.listId || '';
-    const text = String(value).trim();
-
-    // If a full YouTube URL is supplied, use its video= parameter as a
-    // guaranteed fallback. This lets the first song play even if YouTube
-    // delays/rejects exposing the playlist through getPlaylist().
-    const match = text.match(/[?&]v=([^&]+)/);
-    return match ? match[1] : '';
+    return getConfiguredVideoIds()[0] || '';
 }
 
 function onYouTubeIframeAPIReady() {
+    const playerVars = {
+        autoplay: 0,
+        controls: 0,
+        rel: 0,
+        modestbranding: 1,
+        playsinline: 1,
+        enablejsapi: 1
+    };
+
+    // Only send origin when the page is actually hosted over HTTP(S).
+    // For file:// pages, origin:null can cause YouTube Error 153.
+    if (location.protocol === 'http:' || location.protocol === 'https:') {
+        playerVars.origin = location.origin;
+    }
+
     player = new YT.Player('youtube-iframe', {
         height: '200',
         width: '200',
-        playerVars: {
-            autoplay: 0,
-            controls: 0,
-            rel: 0,
-            modestbranding: 1,
-            playsinline: 1
-        },
+        playerVars: playerVars,
         events: {
             onReady: onPlayerReady,
             onStateChange: onPlayerStateChange,
@@ -72,6 +110,21 @@ function onYouTubeIframeAPIReady() {
 
 function onPlayerReady() {
     console.log('YouTube IFrame API ready');
+
+    try {
+        const iframe = player.getIframe?.();
+        if (iframe) {
+            iframe.setAttribute(
+                'allow',
+                'autoplay; encrypted-media; picture-in-picture; web-share'
+            );
+            iframe.setAttribute('allowfullscreen', '');
+            iframe.setAttribute('referrerpolicy', 'strict-origin-when-cross-origin');
+        }
+    } catch (e) {
+        console.warn('Could not set YouTube iframe permissions:', e);
+    }
+
     loadSelectedSource();
 }
 
@@ -83,56 +136,42 @@ function loadSelectedSource() {
     updatePlayBtnIcon();
     resetProgressUI();
 
-    const playlistId = getConfiguredPlaylistId();
-    const fallbackVideoId = getConfiguredVideoId();
+    const videoIds = getConfiguredVideoIds();
     const status = document.getElementById('playlist-status-text');
 
-    if (!playlistId && !fallbackVideoId) {
-        setTrackInfo('YouTube Playlist সেট করুন', 'main.js → playlists');
-        renderSongList([]);
-        if (status) status.innerText = 'এই tab-এর YouTube URL/Playlist ID দিন';
+    currentPlaylistItems = videoIds.map((videoId, index) => ({
+        title: `গান ${index + 1}`,
+        author: 'YouTube',
+        videoId
+    }));
+
+    renderSongList(currentPlaylistItems);
+
+    if (!videoIds.length) {
+        setTrackInfo('YouTube Video ID দিন', 'main.js → playlists');
+        if (status) status.innerText = 'এই tab-এর videos list খালি';
         return;
     }
 
-    setTrackInfo(getPlaylistDisplayName(), 'YouTube Playlist');
+    const firstVideoId = videoIds[0];
 
-    /*
-     * IMPORTANT:
-     * First cue the exact video from the user's supplied URL.
-     * Then ask the IFrame player to attach the playlist.
-     *
-     * This prevents the UI from getting stuck on "Playlist load হচ্ছে..."
-     * when YouTube does not immediately expose getPlaylist().
-     */
+    setTrackInfo(getPlaylistDisplayName(), 'YouTube');
+    if (status) status.innerText = `${getPlaylistDisplayName()} • ${videoIds.length} গান`;
+
     try {
-        if (fallbackVideoId && typeof player.cueVideoById === 'function') {
-            player.cueVideoById(fallbackVideoId, 0);
-        }
+        /*
+         * No YouTube Playlist API is used.
+         * We load the first video directly, then Next/Previous use our own
+         * video-ID array. This removes the playlist-loading failure entirely.
+         */
+        player.loadVideoById({
+            videoId: firstVideoId,
+            startSeconds: 0
+        });
     } catch (e) {
-        console.warn('YouTube fallback video could not be cued:', e);
+        console.error('Direct YouTube video load failed:', e);
+        if (status) status.innerText = 'YouTube video load করা যায়নি';
     }
-
-    if (playlistId) {
-        setTimeout(() => {
-            try {
-                player.loadPlaylist({
-                    listType: 'playlist',
-                    list: playlistId,
-                    index: 0,
-                    startSeconds: 0
-                });
-                if (status) status.innerText = `${getPlaylistDisplayName()} • YouTube Playlist`;
-            } catch (e) {
-                console.warn('Playlist API load failed; keeping direct video fallback:', e);
-                if (status) status.innerText = `${getPlaylistDisplayName()} • প্রথম গান ready`;
-            }
-        }, 350);
-    } else if (status) {
-        status.innerText = `${getPlaylistDisplayName()} • প্রথম গান ready`;
-    }
-
-    // Drawer is optional and never blocks playback.
-    setTimeout(() => refreshPlaylistDrawer(0), 1500);
 }
 
 function getPlaylistDisplayName() {
@@ -156,9 +195,10 @@ function onPlayerStateChange(event) {
         updatePlayBtnIcon();
         stopProgressTimer();
     } else if (event.data === YT.PlayerState.ENDED) {
-        isPlaying = false;
-        updatePlayBtnIcon();
         stopProgressTimer();
+
+        // Automatically move to the next video in our own list.
+        playNextTrack();
     } else if (event.data === YT.PlayerState.CUED) {
         updateTrackInfoFromData();
         refreshPlaylistItems();
@@ -190,29 +230,56 @@ function togglePlay() {
     try {
         if (isPlaying) {
             player.pauseVideo();
-        } else {
-            player.playVideo();
+            return;
         }
+
+        // User clicked the button, so this is a valid playback gesture.
+        player.playVideo();
+
+        // Some browsers/YouTube builds keep a freshly loaded video in CUED
+        // state. Retry once from the same user action if it did not transition.
+        setTimeout(() => {
+            try {
+                const state = player.getPlayerState?.();
+                if (state !== YT.PlayerState.PLAYING) {
+                    const currentId = player.getVideoData?.().video_id;
+                    if (currentId) {
+                        player.loadVideoById({
+                            videoId: currentId,
+                            startSeconds: 0
+                        });
+                    }
+                }
+            } catch (retryError) {
+                console.error('YouTube playback retry failed:', retryError);
+            }
+        }, 700);
+
     } catch (e) {
         console.error('Play/Pause failed:', e);
     }
 }
 
+function getCurrentVideoIndex() {
+    const ids = getConfiguredVideoIds();
+    const currentId = player?.getVideoData?.().video_id || '';
+    return ids.indexOf(currentId);
+}
+
 function playNextTrack() {
     if (!player) return;
 
-    try {
-        const ids = player.getPlaylist ? (player.getPlaylist() || []) : [];
-        if (ids.length && typeof player.nextVideo === 'function') {
-            player.nextVideo();
-            return;
-        }
+    const ids = getConfiguredVideoIds();
+    if (!ids.length) return;
 
-        // Fallback when YouTube has not exposed playlist IDs:
-        const currentId = player.getVideoData?.().video_id;
-        const index = currentPlaylistItems.findIndex(item => item.videoId === currentId);
-        const next = index >= 0 ? currentPlaylistItems[index + 1] : null;
-        if (next?.videoId) player.loadVideoById(next.videoId);
+    const currentIndex = getCurrentVideoIndex();
+    const nextIndex = currentIndex >= 0 ? (currentIndex + 1) % ids.length : 0;
+
+    try {
+        player.loadVideoById({
+            videoId: ids[nextIndex],
+            startSeconds: 0
+        });
     } catch (e) {
         console.error('Next track failed:', e);
     }
@@ -221,17 +288,17 @@ function playNextTrack() {
 function playPrevTrack() {
     if (!player) return;
 
-    try {
-        const ids = player.getPlaylist ? (player.getPlaylist() || []) : [];
-        if (ids.length && typeof player.previousVideo === 'function') {
-            player.previousVideo();
-            return;
-        }
+    const ids = getConfiguredVideoIds();
+    if (!ids.length) return;
 
-        const currentId = player.getVideoData?.().video_id;
-        const index = currentPlaylistItems.findIndex(item => item.videoId === currentId);
-        const prev = index > 0 ? currentPlaylistItems[index - 1] : null;
-        if (prev?.videoId) player.loadVideoById(prev.videoId);
+    const currentIndex = getCurrentVideoIndex();
+    const prevIndex = currentIndex > 0 ? currentIndex - 1 : ids.length - 1;
+
+    try {
+        player.loadVideoById({
+            videoId: ids[prevIndex],
+            startSeconds: 0
+        });
     } catch (e) {
         console.error('Previous track failed:', e);
     }
@@ -288,93 +355,14 @@ function toBengaliDigits(number) {
 // human-readable titles. If oEmbed is unavailable, numbered tracks
 // are still shown and remain playable.
 // ============================================================
-function refreshPlaylistDrawer(attempt) {
-    if (!player || typeof player.getPlaylist !== 'function') return;
-
-    const ids = player.getPlaylist() || [];
-    const status = document.getElementById('playlist-status-text');
-
-    if (ids.length) {
-        loadPlaylistSongList();
-        if (status) status.innerText = `${getPlaylistDisplayName()} • ${ids.length} গান`;
-        return;
-    }
-
-    // Do not show "load failed". Playback may already be working through
-    // the direct-video fallback.
-    if (attempt < 10) {
-        setTimeout(() => refreshPlaylistDrawer(attempt + 1), 1000);
-    } else {
-        if (status) status.innerText = `${getPlaylistDisplayName()} • YouTube`;
-        renderSongList([]);
-    }
+function refreshPlaylistDrawer() {
+    // Playlist drawer is populated directly from playlists[].videos.
+    // No YouTube Playlist API is required.
+    refreshPlaylistItems();
 }
 
 async function loadPlaylistSongList() {
-    if (!player?.getPlaylist) return;
-
-    const ids = player.getPlaylist() || [];
-    if (!ids.length) return;
-
-    const fallbackItems = ids.map((videoId, index) => ({
-        title: `গান ${index + 1}`,
-        author: 'YouTube Playlist',
-        videoId
-    }));
-
-    currentPlaylistItems = fallbackItems;
-    renderSongList(fallbackItems);
-
-    try {
-        const titledItems = await Promise.all(ids.map(async (videoId, index) => {
-            try {
-                const response = await fetch(
-                    `https://www.youtube.com/oembed?url=${encodeURIComponent(
-                        'https://www.youtube.com/watch?v=' + videoId
-                    )}&format=json`
-                );
-
-                if (!response.ok) throw new Error('oEmbed failed');
-
-                const data = await response.json();
-
-                return {
-                    title: data.title || `গান ${index + 1}`,
-                    author: data.author_name || 'YouTube',
-                    videoId
-                };
-            } catch (e) {
-                return fallbackItems[index];
-            }
-        }));
-
-        currentPlaylistItems = titledItems;
-        renderSongList(titledItems);
-    } catch (e) {
-        currentPlaylistItems = fallbackItems;
-        renderSongList(fallbackItems);
-    }
-}
-
-function refreshPlaylistItems() {
-    // This is only for keeping the visible drawer synchronized.
-    // It is NOT part of the playback flow.
-    if (!player?.getPlaylist) return;
-
-    const ids = player.getPlaylist() || [];
-    if (!ids.length) return;
-
-    const oldById = new Map(currentPlaylistItems.map(item => [item.videoId, item]));
-
-    currentPlaylistItems = ids.map((videoId, index) =>
-        oldById.get(videoId) || {
-            title: `গান ${index + 1}`,
-            author: 'YouTube Playlist',
-            videoId
-        }
-    );
-
-    renderSongList(currentPlaylistItems);
+    refreshPlaylistItems();
 }
 
 function renderSongList(items) {
@@ -406,18 +394,10 @@ function playSongFromList(videoId) {
     if (!player || !videoId) return;
 
     try {
-        const ids = player.getPlaylist ? (player.getPlaylist() || []) : [];
-        const playlistIndex = ids.indexOf(videoId);
-
-        if (playlistIndex >= 0 && typeof player.playVideoAt === 'function') {
-            player.playVideoAt(playlistIndex);
-        } else if (typeof player.loadVideoById === 'function') {
-            // Direct fallback. This means the drawer never blocks playback.
-            player.loadVideoById({
-                videoId: videoId,
-                startSeconds: 0
-            });
-        }
+        player.loadVideoById({
+            videoId: videoId,
+            startSeconds: 0
+        });
     } catch (e) {
         console.error('Could not play selected YouTube video:', e);
     }
@@ -426,15 +406,19 @@ function playSongFromList(videoId) {
 }
 
 function onPlayerError(event) {
-    console.error('YouTube Player Error:', event.data);
+    console.error('YouTube IFrame Player Error:', event.data);
+
     const status = document.getElementById('playlist-status-text');
+
     const errors = {
-        2: 'Invalid YouTube request',
-        5: 'YouTube HTML5 player error',
-        100: 'Video পাওয়া যায়নি বা Private',
-        101: 'এই video embedding নিষিদ্ধ',
-        150: 'এই video embedding নিষিদ্ধ'
+        2: 'YouTube Error 2 — Video ID / request invalid',
+        5: 'YouTube Error 5 — HTML5 player error',
+        100: 'YouTube Error 100 — Video পাওয়া যায়নি / Private / Removed',
+        101: 'YouTube Error 101 — এই video অন্য website-এ embed করা নিষিদ্ধ',
+        150: 'YouTube Error 150 — এই video অন্য website-এ embed করা নিষিদ্ধ',
+        153: 'YouTube Error 153 — YouTube এই embedded request-এর Referer/Origin পাচ্ছে না'
     };
+
     if (status) {
         status.innerText = errors[event.data] || `YouTube playback error (${event.data})`;
     }
