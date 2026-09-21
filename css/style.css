@@ -1202,3 +1202,55 @@ body {
 
 #yt-player-container { width:200px !important; height:200px !important; }
 #youtube-iframe { width:200px !important; height:200px !important; }
+
+/* Technical YouTube player only. Visible website design remains unchanged. */
+#yt-player-container {
+    position: fixed !important;
+    width: 200px !important;
+    height: 200px !important;
+    left: -9999px !important;
+    top: 0 !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+    overflow: hidden !important;
+}
+#youtube-iframe {
+    width: 200px !important;
+    height: 200px !important;
+}
+
+/* YouTube API technical viewport. It stays off-screen so the website design
+   remains unchanged while the IFrame API has a valid viewport. */
+#yt-player-container {
+    position: fixed !important;
+    width: 200px !important;
+    height: 200px !important;
+    left: -10000px !important;
+    top: 0 !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+    overflow: hidden !important;
+    display: block !important;
+}
+#youtube-iframe {
+    width: 200px !important;
+    height: 200px !important;
+}
+
+/* Technical YouTube viewport only. It is outside the visible layout. */
+#yt-player-container {
+    position: fixed !important;
+    width: 200px !important;
+    height: 200px !important;
+    left: -220px !important;
+    top: 0 !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+    overflow: hidden !important;
+    display: block !important;
+    z-index: 0 !important;
+}
+#youtube-iframe {
+    width: 200px !important;
+    height: 200px !important;
+}
