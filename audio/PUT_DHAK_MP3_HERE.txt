@@ -1,0 +1,9 @@
+Place your downloaded Dhak audio file in this folder and rename it to:
+
+dhak.mp3
+
+The website is already configured to use:
+audio/dhak.mp3
+
+Click the Dhak button once to start looping.
+Click it again to stop.
