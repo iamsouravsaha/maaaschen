@@ -19,7 +19,7 @@
 body {
     font-family: 'Anek Bangla', 'Poppins', sans-serif;
     background-color: #121015;
-    background-image: url('../images/background.png');
+    background-image: none;
     background-size: cover;
     background-position: center;
     background-attachment: fixed;
@@ -1253,4 +1253,58 @@ body {
 #youtube-iframe {
     width: 200px !important;
     height: 200px !important;
+}
+
+
+/* ============================================================
+   Home background slider — only the two supplied images.
+   Existing page components and their design remain unchanged.
+   ============================================================ */
+.home-background-slider {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    overflow: hidden;
+    pointer-events: none;
+    background: #121015;
+}
+
+.home-background-slide {
+    position: absolute;
+    inset: 0;
+    background-size: cover;
+    background-position: center center;
+    background-repeat: no-repeat;
+    opacity: 0;
+    will-change: opacity;
+    animation: homeBackgroundCrossfade 14s infinite;
+}
+
+.home-background-slide.slide-one {
+    background-image: url('../images/background01.png');
+    animation-delay: 0s;
+}
+
+.home-background-slide.slide-two {
+    background-image: url('../images/background.png');
+    animation-delay: -7s;
+}
+
+@keyframes homeBackgroundCrossfade {
+    0%, 42% { opacity: 1; }
+    50%, 92% { opacity: 0; }
+    100% { opacity: 1; }
+}
+
+/* Respect reduced-motion preferences while keeping both images available. */
+@media (prefers-reduced-motion: reduce) {
+    .home-background-slide {
+        animation: none;
+    }
+    .home-background-slide.slide-one {
+        opacity: 1;
+    }
+    .home-background-slide.slide-two {
+        opacity: 0;
+    }
 }
